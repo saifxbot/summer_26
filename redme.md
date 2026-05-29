@@ -1,0 +1,1 @@
+We’re building a scalable and secure backend API platform running on AWS. The idea is to have our own dedicated database to handle data, and we'll be using a containerized setup so we don't have to deal with managing servers manually.
