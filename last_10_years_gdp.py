@@ -2,6 +2,15 @@ import requests
 import json
 import boto3
 from botocore.exceptions import ClientError
+import configparser
+import os
+
+def load_config():
+    """Load configuration from settings.ini"""
+    config = configparser.ConfigParser()
+    config_path = os.path.join(os.path.dirname(__file__), 'settings.ini')
+    config.read(config_path)
+    return config
 
 def get_api_key():
     """Fetch API key from AWS Secrets Manager"""
@@ -17,11 +26,18 @@ def get_api_key():
         raise
 
 def get_last_10_years_gdp():
+    config = load_config()
     api_key = get_api_key()
+    
+    base_url = config.get('api', 'base_url')
+    function = config.get('api', 'function')
+    interval = config.get('api', 'interval')
+    years_to_fetch = config.getint('data', 'years_to_fetch')
+    
     url = (
-        f"https://www.alphavantage.co/query"
-        f"?function=REAL_GDP"
-        f"&interval=annual"
+        f"{base_url}"
+        f"?function={function}"
+        f"&interval={interval}"
         f"&apikey={api_key}"
     )
 # Make the API call
@@ -30,7 +46,7 @@ def get_last_10_years_gdp():
     if response.status_code == 200:
         data = response.json()
 
-        gdp_data = data["data"][:10]   # First 10 years returned
+        gdp_data = data["data"][:years_to_fetch]
 
         print("\nLast 10 Years Real GDP:\n")
 
