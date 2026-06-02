@@ -1,13 +1,28 @@
 import requests
+import json
+import boto3
+from botocore.exceptions import ClientError
 
-API_KEY = "N4L5M3W3LLXA9XYB"
+def get_api_key():
+    """Fetch API key from AWS Secrets Manager"""
+    secret_name = "gdp-api-key"
+    region = "eu-north-1"
+    
+    try:
+        client = boto3.client('secretsmanager', region_name=region)
+        response = client.get_secret_value(SecretId=secret_name)
+        return response['SecretString']
+    except ClientError as e:
+        print(f"Error retrieving secret: {e}")
+        raise
 
 def get_last_10_years_gdp():
+    api_key = get_api_key()
     url = (
         f"https://www.alphavantage.co/query"
         f"?function=REAL_GDP"
         f"&interval=annual"
-        f"&apikey={API_KEY}"
+        f"&apikey={api_key}"
     )
 # Make the API call
     response = requests.get(url)
