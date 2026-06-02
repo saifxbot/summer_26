@@ -4,6 +4,7 @@ import boto3
 from botocore.exceptions import ClientError
 import configparser
 import os
+from extract_endpoint import extract_endpoint, format_gdp_data
 
 def load_config():
     """Load configuration from settings.ini"""
@@ -27,34 +28,16 @@ def get_api_key():
 
 def get_last_10_years_gdp():
     config = load_config()
-    api_key = get_api_key()
     
-    base_url = config.get('api', 'base_url')
     function = config.get('api', 'function')
     interval = config.get('api', 'interval')
     years_to_fetch = config.getint('data', 'years_to_fetch')
     
-    url = (
-        f"{base_url}"
-        f"?function={function}"
-        f"&interval={interval}"
-        f"&apikey={api_key}"
-    )
-# Make the API call
-    response = requests.get(url)
-
-    if response.status_code == 200:
-        data = response.json()
-
-        gdp_data = data["data"][:years_to_fetch]
-
-        print("\nLast 10 Years Real GDP:\n")
-
-        for item in gdp_data:
-            print(f"Year: {item['date']} GDP: {item['value']}")
-
-    else:
-        print("Request failed:", response.status_code)
+    # Use the generic endpoint extractor
+    data = extract_endpoint(function, interval=interval)
+    
+    if data:
+        format_gdp_data(data, limit=years_to_fetch)
 
 
 # Method call
