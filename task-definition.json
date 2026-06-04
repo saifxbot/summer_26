@@ -1,0 +1,23 @@
+{
+  "family": "last-10-years-gdp-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "containerDefinitions": [
+    {
+      "name": "last-10-years-gdp",
+      "image": "811783767965.dkr.ecr.eu-north-1.amazonaws.com/last-10-years-gdp:latest",
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/last-10-years-gdp",
+          "awslogs-region": "eu-north-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ],
+  "executionRoleArn": "arn:aws:iam::811783767965:role/ecsTaskExecutionRole"
+}
