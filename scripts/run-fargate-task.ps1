@@ -5,9 +5,9 @@ Write-Host "[*] Starting GDP Fargate Task on AWS..." -ForegroundColor Cyan
 
 $clusterName = "gdp-cluster"
 $taskDefinition = "last-10-years-gdp-task"
-$subnet = "subnet-06689d8919ecd8b3f"
-$securityGroup = "sg-06b5531549418375d"
-$region = "eu-north-1"
+$subnet = "subnet-05af49114c7393c39"
+$securityGroup = "sg-0b8eaca97d7cfe13b"
+$region = "eu-west-1"
 
 aws ecs run-task `
   --cluster $clusterName `
@@ -15,6 +15,11 @@ aws ecs run-task `
   --launch-type FARGATE `
   --network-configuration "awsvpcConfiguration={subnets=[$subnet],securityGroups=[$securityGroup],assignPublicIp=ENABLED}" `
   --region $region
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[!] Failed to start task. Check the AWS error above." -ForegroundColor Red
+    exit $LASTEXITCODE
+}
 
 Write-Host ""
 Write-Host "[+] Task Started Successfully!" -ForegroundColor Green
