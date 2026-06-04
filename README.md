@@ -4,24 +4,23 @@ This container runs the existing `last_10_years_gdp.py` script, which calls the 
 
 ## Build
 
-```powershell
+powershell
 docker build -t last-10-years-gdp .
-```
+
 
 ## Run
 
-```powershell
+powershell
 docker run --rm last-10-years-gdp
-```
+
 
 ## AWS ECR
 
-```powershell
+powershell
 aws ecr create-repository --repository-name last-10-years-gdp
 aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
 docker tag last-10-years-gdp:latest <account-id>.dkr.ecr.<region>.amazonaws.com/last-10-years-gdp:latest
 docker push <account-id>.dkr.ecr.<region>.amazonaws.com/last-10-years-gdp:latest
-```
 
 ## AWS ECS Fargate
 
