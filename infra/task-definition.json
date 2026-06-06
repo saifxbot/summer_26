@@ -7,13 +7,19 @@
   "containerDefinitions": [
     {
       "name": "last-10-years-gdp",
-      "image": "811783767965.dkr.ecr.eu-north-1.amazonaws.com/last-10-years-gdp:latest",
+      "image": "811783767965.dkr.ecr.eu-west-1.amazonaws.com/last-10-years-gdp:latest",
       "essential": true,
+      "environment": [
+        {
+          "name": "ALPHAVANTAGE_API_KEY",
+          "value": "REPLACE_WITH_ALPHA_VANTAGE_KEY"
+        }
+      ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
           "awslogs-group": "/ecs/last-10-years-gdp",
-          "awslogs-region": "eu-north-1",
+          "awslogs-region": "eu-west-1",
           "awslogs-stream-prefix": "ecs"
         }
       }
