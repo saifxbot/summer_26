@@ -124,3 +124,23 @@ Best for:
 # Final Recommendation
 Reason:
 Databricks is optimized for large-scale distributed data processing rather than lightweight API-based workloads.
+
+
+Implemented DAG
+
+DAG Name: upload_trigger_to_s3
+
+Workflow Steps
+Airflow DAG runs locally.
+
+DAG uploads a trigger file to:
+
+s3://summer-26-project/airflow-trigger/trigger.txt
+S3 event notification publishes the event to SNS.
+SNS triggers Lambda.
+
+Lambda reads:
+
+real_gdp/real_gdp.csv.gz
+GDP data content is printed into CloudWatch Logs.
+
