@@ -6,3 +6,5 @@ __pycache__/
 *.log
 settings_api_aws.ini
 aws_zone.ini
+config.bat
+node_modules
