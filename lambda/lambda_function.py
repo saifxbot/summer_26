@@ -22,7 +22,7 @@ def wait_for_statement(statement_id):
         time.sleep(1)
 
 
-def lambda_handler(event, context):
+def copy_to_redshift(event, context):
     print("Lambda triggered")
 
     bucket = os.environ["BUCKET"]
