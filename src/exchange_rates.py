@@ -22,18 +22,16 @@ def get_api_key():
     return config.get("credentials", "api_key")
 
 
-def upload_gdp_to_s3(gdp_data):
+def upload_to_s3(df):
     config = load_config()
 
     bucket = config.get("storage", "bucket_name")
-    s3_key = config.get("storage", "gdp_key")
+    s3_key = config.get("storage", "exchange_rate_key")
     region = config.get("aws", "region")
-
-    df = pd.DataFrame(gdp_data)
 
     local_file = os.path.join(
         tempfile.gettempdir(),
-        "real_gdp.csv.gz"
+        "exchange_rates.csv.gz"
     )
 
     df.to_csv(
@@ -57,19 +55,23 @@ def upload_gdp_to_s3(gdp_data):
     print(f"Uploaded successfully to s3://{bucket}/{s3_key}")
 
 
-def get_last_10_years_gdp():
+def get_exchange_rates():
     config = load_config()
+
     api_key = get_api_key()
 
     base_url = config.get("api", "base_url")
-    function = config.get("api", "function")
-    interval = config.get("api", "interval")
-    years_to_fetch = config.getint("data", "years_to_fetch")
+    function = config.get("exchange_rate", "function")
+    from_currency = config.get("exchange_rate", "from_currency")
+    to_currency = config.get("exchange_rate", "to_currency")
+    outputsize = config.get("exchange_rate", "outputsize")
 
     url = (
         f"{base_url}"
         f"?function={function}"
-        f"&interval={interval}"
+        f"&from_symbol={from_currency}"
+        f"&to_symbol={to_currency}"
+        f"&outputsize={outputsize}"
         f"&apikey={api_key}"
     )
 
@@ -78,15 +80,26 @@ def get_last_10_years_gdp():
 
     data = response.json()
 
-    gdp_data = data["data"][:years_to_fetch]
+    time_series = data["Time Series FX (Daily)"]
 
-    print("\nLast 10 Years Real GDP:\n")
+    rows = []
 
-    for item in gdp_data:
-        print(f"Year: {item['date']} GDP: {item['value']}")
+    for rate_date, values in time_series.items():
+        rows.append(
+            {
+                "rate_date": rate_date,
+                "from_currency": from_currency,
+                "to_currency": to_currency,
+                "exchange_rate": values["4. close"],
+            }
+        )
 
-    upload_gdp_to_s3(gdp_data)
+    df = pd.DataFrame(rows)
+
+    print(f"Total rows fetched: {len(df)}")
+
+    upload_to_s3(df)
 
 
 if __name__ == "__main__":
-    get_last_10_years_gdp()
+    get_exchange_rates()
