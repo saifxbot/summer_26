@@ -5,14 +5,9 @@ import tempfile
 import boto3
 import pandas as pd
 import requests
-from botocore.exceptions import ClientError
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-
-BUCKET_NAME = "summer-26-project"
-S3_KEY = "real_gdp/real_gdp.csv.gz"
-AWS_REGION = "eu-west-1"
 
 
 def load_config():
@@ -23,33 +18,43 @@ def load_config():
 
 
 def get_api_key():
-    api_key = os.getenv("ALPHAVANTAGE_API_KEY")
-    if api_key:
-        return api_key
-
-    secret_name = "gdp-api-key"
-
-    try:
-        client = boto3.client("secretsmanager", region_name=AWS_REGION)
-        response = client.get_secret_value(SecretId=secret_name)
-        return response["SecretString"]
-    except ClientError as e:
-        print(f"Error retrieving secret: {e}")
-        raise
+    config = load_config()
+    return config.get("credentials", "api_key")
 
 
 def upload_gdp_to_s3(gdp_data):
+    config = load_config()
+
+    bucket = config.get("storage", "bucket_name")
+    s3_key = config.get("storage", "gdp_key")
+    region = config.get("aws", "region")
+
     df = pd.DataFrame(gdp_data)
 
-    local_file = os.path.join(tempfile.gettempdir(), "real_gdp.csv.gz")
+    local_file = os.path.join(
+        tempfile.gettempdir(),
+        "real_gdp.csv.gz"
+    )
 
-    df.to_csv(local_file, index=False, compression="gzip")
+    df.to_csv(
+        local_file,
+        index=False,
+        compression="gzip"
+    )
 
-    s3 = boto3.client("s3", region_name=AWS_REGION)
-    s3.upload_file(local_file, BUCKET_NAME, S3_KEY)
+    s3 = boto3.client(
+        "s3",
+        region_name=region
+    )
+
+    s3.upload_file(
+        local_file,
+        bucket,
+        s3_key
+    )
 
     print(f"Created CSV gzip file: {local_file}")
-    print(f"Uploaded successfully to s3://{BUCKET_NAME}/{S3_KEY}")
+    print(f"Uploaded successfully to s3://{bucket}/{s3_key}")
 
 
 def get_last_10_years_gdp():

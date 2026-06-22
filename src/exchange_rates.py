@@ -1,7 +1,6 @@
 import configparser
 import os
 import tempfile
-from datetime import datetime, UTC
 
 import boto3
 import pandas as pd
@@ -9,10 +8,6 @@ import requests
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-
-BUCKET_NAME = "summer-26-project"
-S3_KEY = "exchange_rates/exchange_rates.csv.gz"
-AWS_REGION = "eu-west-1"
 
 
 def load_config():
@@ -27,24 +22,40 @@ def get_api_key():
     return config.get("credentials", "api_key")
 
 
-def upload_exchange_rates_to_s3(exchange_rate_data):
-    df = pd.DataFrame(exchange_rate_data)
+def upload_to_s3(df):
+    config = load_config()
+
+    bucket = config.get("storage", "bucket_name")
+    s3_key = config.get("storage", "exchange_rate_key")
+    region = config.get("aws", "region")
 
     local_file = os.path.join(
         tempfile.gettempdir(),
         "exchange_rates.csv.gz"
     )
 
-    df.to_csv(local_file, index=False, compression="gzip")
+    df.to_csv(
+        local_file,
+        index=False,
+        compression="gzip"
+    )
 
-    s3 = boto3.client("s3", region_name=AWS_REGION)
-    s3.upload_file(local_file, BUCKET_NAME, S3_KEY)
+    s3 = boto3.client(
+        "s3",
+        region_name=region
+    )
+
+    s3.upload_file(
+        local_file,
+        bucket,
+        s3_key
+    )
 
     print(f"Created CSV gzip file: {local_file}")
-    print(f"Uploaded successfully to s3://{BUCKET_NAME}/{S3_KEY}")
+    print(f"Uploaded successfully to s3://{bucket}/{s3_key}")
 
 
-def get_exchange_rate():
+def get_exchange_rates():
     config = load_config()
 
     api_key = get_api_key()
@@ -53,12 +64,14 @@ def get_exchange_rate():
     function = config.get("exchange_rate", "function")
     from_currency = config.get("exchange_rate", "from_currency")
     to_currency = config.get("exchange_rate", "to_currency")
+    outputsize = config.get("exchange_rate", "outputsize")
 
     url = (
         f"{base_url}"
         f"?function={function}"
-        f"&from_currency={from_currency}"
-        f"&to_currency={to_currency}"
+        f"&from_symbol={from_currency}"
+        f"&to_symbol={to_currency}"
+        f"&outputsize={outputsize}"
         f"&apikey={api_key}"
     )
 
@@ -66,28 +79,27 @@ def get_exchange_rate():
     response.raise_for_status()
 
     data = response.json()
-    exchange_data = data["Realtime Currency Exchange Rate"]
 
-    exchange_rate_data = [
-        {
-            "rate_date": datetime.now(UTC).date().isoformat(),
-            "from_currency": exchange_data["1. From_Currency Code"],
-            "to_currency": exchange_data["3. To_Currency Code"],
-            "exchange_rate": exchange_data["5. Exchange Rate"],
-        }
-    ]
+    time_series = data["Time Series FX (Daily)"]
 
-    print("\nExchange Rate Data:\n")
+    rows = []
 
-    for item in exchange_rate_data:
-        print(
-            f"{item['rate_date']} "
-            f"{item['from_currency']} to {item['to_currency']} "
-            f"Rate: {item['exchange_rate']}"
+    for rate_date, values in time_series.items():
+        rows.append(
+            {
+                "rate_date": rate_date,
+                "from_currency": from_currency,
+                "to_currency": to_currency,
+                "exchange_rate": values["4. close"],
+            }
         )
 
-    upload_exchange_rates_to_s3(exchange_rate_data)
+    df = pd.DataFrame(rows)
+
+    print(f"Total rows fetched: {len(df)}")
+
+    upload_to_s3(df)
 
 
 if __name__ == "__main__":
-    get_exchange_rate()
+    get_exchange_rates()
