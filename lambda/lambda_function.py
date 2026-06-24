@@ -12,21 +12,8 @@ redshift = boto3.client("redshift-data")
 
 TABLE_MAPPING = {
     "real_gdp/real_gdp.csv.gz": "gdp_stg",
-    "exchange_rates/exchange_rates.csv.gz": "exchange_rate_stg"
-}
-
-
-EXPECTED_COLUMNS = {
-    "gdp_stg": [
-        "date",
-        "value"
-    ],
-    "exchange_rate_stg": [
-        "rate_date",
-        "from_currency",
-        "to_currency",
-        "exchange_rate"
-    ]
+    "exchange_rates/exchange_rates.csv.gz": "exchange_rate_stg",
+    "company_overview/company_overview.csv.gz": "company_overview_stg"
 }
 
 
@@ -62,11 +49,33 @@ def execute_sql(workgroup, database, sql):
     return result
 
 
-def get_table_columns(table):
-    if table not in EXPECTED_COLUMNS:
-        raise Exception(f"No column mapping found for {table}")
+def get_table_columns(workgroup, database, table):
+    sql = f"""
+    SELECT "column"
+    FROM pg_table_def
+    WHERE schemaname = 'public'
+      AND tablename = '{table}';
+    """
 
-    return EXPECTED_COLUMNS[table]
+    response = redshift.execute_statement(
+        WorkgroupName=workgroup,
+        Database=database,
+        Sql=sql
+    )
+
+    statement_id = response["Id"]
+    result = wait_for_statement(statement_id)
+
+    if result["Status"] != "FINISHED":
+        print("Redshift error:", result)
+        raise Exception("Failed to fetch table columns")
+
+    records = redshift.get_statement_result(Id=statement_id)
+
+    return [
+        row[0]["stringValue"]
+        for row in records["Records"]
+    ]
 
 
 def get_s3_key_from_event(event):
@@ -111,7 +120,11 @@ def copy_to_redshift(event, context):
 
     file_columns = reader.fieldnames
 
-    table_columns = get_table_columns(table)
+    table_columns = get_table_columns(
+        workgroup,
+        database,
+        table
+    )
 
     print("File columns:", file_columns)
     print("Table columns:", table_columns)
