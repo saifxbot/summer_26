@@ -1,4 +1,5 @@
 import configparser
+import logging
 import os
 import tempfile
 import time
@@ -7,6 +8,13 @@ import boto3
 import pandas as pd
 import requests
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+_LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 
@@ -30,58 +38,7 @@ def clean_value(value):
     return value
 
 
-def upload_to_s3(df):
-    config = load_config()
-
-    bucket = config.get("storage", "bucket_name")
-    s3_key = config.get("storage", "company_overview_key")
-    region = config.get("aws", "region")
-
-    local_file = os.path.join(
-        tempfile.gettempdir(),
-        "company_overview.csv.gz"
-    )
-
-    df.to_csv(
-        local_file,
-        index=False,
-        compression="gzip"
-    )
-
-    s3 = boto3.client(
-        "s3",
-        region_name=region
-    )
-
-    s3.upload_file(
-        local_file,
-        bucket,
-        s3_key
-    )
-
-    print(f"Created CSV gzip file: {local_file}")
-    print(f"Uploaded successfully to s3://{bucket}/{s3_key}")
-
-
-def fetch_company_overview(symbol):
-    config = load_config()
-
-    api_key = get_api_key()
-    base_url = config.get("api", "base_url")
-    function = config.get("company_overview", "function")
-
-    url = (
-        f"{base_url}"
-        f"?function={function}"
-        f"&symbol={symbol}"
-        f"&apikey={api_key}"
-    )
-
-    response = requests.get(url)
-    response.raise_for_status()
-
-    data = response.json()
-
+def map_company_overview(data):
     return {
         "symbol": clean_value(data.get("Symbol")),
         "asset_type": clean_value(data.get("AssetType")),
@@ -122,6 +79,61 @@ def fetch_company_overview(symbol):
     }
 
 
+def upload_to_s3(df):
+    config = load_config()
+
+    bucket = config.get("storage", "bucket_name")
+    s3_key = config.get("storage", "company_overview_key")
+    region = config.get("aws", "region")
+
+    local_file = os.path.join(
+        tempfile.gettempdir(),
+        "company_overview.csv.gz"
+    )
+
+    df.to_csv(
+        local_file,
+        index=False,
+        compression="gzip"
+    )
+
+    s3 = boto3.client(
+        "s3",
+        region_name=region
+    )
+
+    s3.upload_file(
+        local_file,
+        bucket,
+        s3_key
+    )
+
+    _LOGGER.info("Created CSV gzip file: %s", local_file)
+    _LOGGER.info("Uploaded successfully to s3://%s/%s", bucket, s3_key)
+
+
+def fetch_company_overview(symbol):
+    config = load_config()
+
+    api_key = get_api_key()
+    base_url = config.get("api", "base_url")
+    function = config.get("company_overview", "function")
+
+    url = (
+        f"{base_url}"
+        f"?function={function}"
+        f"&symbol={symbol}"
+        f"&apikey={api_key}"
+    )
+
+    response = requests.get(url)
+    response.raise_for_status()
+
+    data = response.json()
+
+    return map_company_overview(data)
+
+
 def get_company_overviews():
     config = load_config()
 
@@ -135,23 +147,26 @@ def get_company_overviews():
     for symbol in symbols:
         symbol = symbol.strip()
 
-        print(f"Fetching company overview for {symbol}")
+        _LOGGER.info("Fetching company overview for %s", symbol)
 
         row = fetch_company_overview(symbol)
 
         if row["symbol"]:
             rows.append(row)
         else:
-            print(f"No data returned for {symbol}")
+            _LOGGER.warning("No data returned for %s", symbol)
 
         time.sleep(1)
 
     df = pd.DataFrame(rows)
 
-    print(f"Total company overview rows fetched: {len(df)}")
+    _LOGGER.info("Total company overview rows fetched: %s", len(df))
 
     if not df.empty:
-        print(df[["symbol", "name", "sector", "industry"]])
+        _LOGGER.info(
+            "Company overview sample:\n%s",
+            df[["symbol", "name", "sector", "industry"]].to_string(index=False)
+        )
 
     upload_to_s3(df)
 
