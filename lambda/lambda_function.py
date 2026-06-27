@@ -11,11 +11,30 @@ redshift = boto3.client("redshift-data")
 
 
 TABLE_MAPPING = {
-    "real_gdp/real_gdp.csv.gz": "gdp_stg",
-    "exchange_rates/exchange_rates.csv.gz": "exchange_rate_stg",
-    "company_overview/company_overview.csv.gz": "company_overview_stg",
-    "daily_stock/daily_stock.csv.gz": "daily_stock_stg",
-    "news_sentiment/news_sentiment.csv.gz": "news_sentiment_stg"
+    "real_gdp/real_gdp.csv.gz": {
+        "schema": "public",
+        "table": "gdp_stg"
+    },
+    "exchange_rates/exchange_rates.csv.gz": {
+        "schema": "public",
+        "table": "exchange_rate_stg"
+    },
+    "company_overview/company_overview.csv.gz": {
+        "schema": "public",
+        "table": "company_overview_stg"
+    },
+    "daily_stock/daily_stock.csv.gz": {
+        "schema": "public",
+        "table": "daily_stock_stg"
+    },
+    "news_sentiment/news_sentiment.csv.gz": {
+        "schema": "public",
+        "table": "news_sentiment_stg"
+    },
+    "operating_cash_balance/operating_cash_balance.csv.gz": {
+        "schema": "source_fiscaldata",
+        "table": "operating_cash_balance_stg"
+    }
 }
 
 
@@ -24,6 +43,7 @@ def wait_for_statement(statement_id):
         result = redshift.describe_statement(Id=statement_id)
         status = result["Status"]
 
+        print("Redshift statement id:", statement_id)
         print("Redshift status:", status)
 
         if status in ["FINISHED", "FAILED", "ABORTED"]:
@@ -33,6 +53,9 @@ def wait_for_statement(statement_id):
 
 
 def execute_sql(workgroup, database, sql):
+    print("Executing SQL:")
+    print(sql)
+
     response = redshift.execute_statement(
         WorkgroupName=workgroup,
         Database=database,
@@ -40,23 +63,72 @@ def execute_sql(workgroup, database, sql):
     )
 
     statement_id = response["Id"]
-    print("Redshift statement id:", statement_id)
-
     result = wait_for_statement(statement_id)
 
     if result["Status"] != "FINISHED":
-        print("Redshift error:", result)
+        print("Redshift error result:")
+        print(result)
         raise Exception("Redshift statement failed")
 
     return result
 
 
-def get_table_columns(workgroup, database, table):
+def get_statement_records(statement_id):
+    records = []
+    next_token = None
+
+    while True:
+        if next_token:
+            response = redshift.get_statement_result(
+                Id=statement_id,
+                NextToken=next_token
+            )
+        else:
+            response = redshift.get_statement_result(
+                Id=statement_id
+            )
+
+        records.extend(response.get("Records", []))
+        next_token = response.get("NextToken")
+
+        if not next_token:
+            break
+
+    return records
+
+
+def extract_value(field):
+    if "stringValue" in field:
+        return field["stringValue"]
+
+    if "longValue" in field:
+        return str(field["longValue"])
+
+    if "doubleValue" in field:
+        return str(field["doubleValue"])
+
+    if "booleanValue" in field:
+        return str(field["booleanValue"])
+
+    if field.get("isNull"):
+        return None
+
+    return str(field)
+
+
+def get_table_columns(workgroup, database, schema, table):
+    print("Fetching table columns")
+    print("Workgroup:", workgroup)
+    print("Database:", database)
+    print("Schema:", schema)
+    print("Table:", table)
+
     sql = f"""
-    SELECT "column"
-    FROM pg_table_def
-    WHERE schemaname = 'public'
-      AND tablename = '{table}';
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = '{schema}'
+      AND table_name = '{table}'
+    ORDER BY ordinal_position;
     """
 
     response = redshift.execute_statement(
@@ -69,15 +141,23 @@ def get_table_columns(workgroup, database, table):
     result = wait_for_statement(statement_id)
 
     if result["Status"] != "FINISHED":
-        print("Redshift error:", result)
+        print("Redshift error:")
+        print(result)
         raise Exception("Failed to fetch table columns")
 
-    records = redshift.get_statement_result(Id=statement_id)
+    records = get_statement_records(statement_id)
 
-    return [
-        row[0]["stringValue"]
-        for row in records["Records"]
-    ]
+    table_columns = []
+
+    for row in records:
+        if row:
+            value = extract_value(row[0])
+            if value:
+                table_columns.append(value)
+
+    print("Table columns:", table_columns)
+
+    return table_columns
 
 
 def get_metadata_key(table):
@@ -94,13 +174,13 @@ def get_metadata_columns(bucket, table):
         Key=metadata_key
     )
 
-    metadata_data = obj["Body"].read().decode("utf-8")
+    metadata_data = obj["Body"].read().decode("utf-8-sig")
 
     reader = csv.DictReader(
         io.StringIO(metadata_data)
     )
 
-    if "fieldname" not in reader.fieldnames:
+    if not reader.fieldnames or "fieldname" not in reader.fieldnames:
         raise Exception(
             f"Metadata file {metadata_key} missing fieldname column"
         )
@@ -130,21 +210,38 @@ def get_s3_key_from_event(event):
 
 def copy_to_redshift(event, context):
     print("Lambda triggered")
+    print("Lambda version: schema-aware copy load")
 
     bucket = os.environ["BUCKET"]
     workgroup = os.environ["WORKGROUP"]
     database = os.environ["DATABASE"]
 
+    print("Env BUCKET:", bucket)
+    print("Env WORKGROUP:", workgroup)
+    print("Env DATABASE:", database)
+
     s3_key = get_s3_key_from_event(event)
 
     print("Triggered S3 key:", s3_key)
+
+    if s3_key.startswith("metadata/"):
+        print(f"Skipping metadata file: {s3_key}")
+        return {
+            "statusCode": 200,
+            "body": f"Skipped metadata file: {s3_key}"
+        }
 
     if s3_key not in TABLE_MAPPING:
         raise Exception(
             f"No staging table mapping found for {s3_key}"
         )
 
-    table = TABLE_MAPPING[s3_key]
+    mapping = TABLE_MAPPING[s3_key]
+    schema = mapping["schema"]
+    table = mapping["table"]
+
+    print("Target schema:", schema)
+    print("Target table:", table)
 
     obj = s3.get_object(
         Bucket=bucket,
@@ -155,7 +252,7 @@ def copy_to_redshift(event, context):
 
     csv_data = gzip.decompress(
         compressed
-    ).decode("utf-8")
+    ).decode("utf-8-sig")
 
     reader = csv.DictReader(
         io.StringIO(csv_data)
@@ -163,9 +260,13 @@ def copy_to_redshift(event, context):
 
     file_columns = reader.fieldnames
 
+    if not file_columns:
+        raise Exception("CSV file has no header columns")
+
     table_columns = get_table_columns(
         workgroup,
         database,
+        schema,
         table
     )
 
@@ -192,53 +293,30 @@ def copy_to_redshift(event, context):
             f"Metadata columns: {metadata_columns}"
         )
 
-    rows = list(reader)
+    copy_sql = f"""
+    TRUNCATE TABLE {schema}.{table};
 
-    if not rows:
-        raise Exception("No rows found in file")
-
-    values = []
-
-    for row in rows:
-        row_values = []
-
-        for column in file_columns:
-            value = row[column]
-
-            if value == "":
-                row_values.append("NULL")
-            else:
-                escaped_value = value.replace("'", "''")
-                row_values.append(
-                    f"'{escaped_value}'"
-                )
-
-        values.append(
-            f"({','.join(row_values)})"
-        )
-
-    column_names = ",".join(file_columns)
-
-    sql = f"""
-    TRUNCATE TABLE public.{table};
-
-    INSERT INTO public.{table} ({column_names})
-    VALUES {",".join(values)};
+    COPY {schema}.{table}
+    FROM 's3://{bucket}/{s3_key}'
+    IAM_ROLE default
+    FORMAT AS CSV
+    IGNOREHEADER 1
+    GZIP
+    EMPTYASNULL
+    BLANKSASNULL;
     """
 
     execute_sql(
         workgroup,
         database,
-        sql
+        copy_sql
     )
 
-    print(
-        f"Inserted {len(rows)} rows into public.{table}"
-    )
+    print(f"Copied file into {schema}.{table}")
 
     return {
         "statusCode": 200,
-        "body": f"Inserted {len(rows)} rows into public.{table}"
+        "body": f"Copied file into {schema}.{table}"
     }
 
 
