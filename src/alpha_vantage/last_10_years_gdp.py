@@ -1,18 +1,30 @@
 import configparser
+import logging
 import os
 import tempfile
+from pathlib import Path
 
 import boto3
 import pandas as pd
 import requests
 
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+logging.getLogger("botocore").setLevel(logging.WARNING)
+logging.getLogger("boto3").setLevel(logging.WARNING)
+
+_LOGGER = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_config():
     config = configparser.ConfigParser()
-    config_path = os.path.join(PROJECT_ROOT, "settings.ini")
+    config_path = PROJECT_ROOT / "settings.ini"
     config.read(config_path)
     return config
 
@@ -53,8 +65,16 @@ def upload_gdp_to_s3(gdp_data):
         s3_key
     )
 
-    print(f"Created CSV gzip file: {local_file}")
-    print(f"Uploaded successfully to s3://{bucket}/{s3_key}")
+    _LOGGER.info(
+        "Created CSV gzip file: %s",
+        local_file
+    )
+
+    _LOGGER.info(
+        "Uploaded successfully to s3://%s/%s",
+        bucket,
+        s3_key
+    )
 
 
 def get_last_10_years_gdp():
@@ -78,12 +98,26 @@ def get_last_10_years_gdp():
 
     data = response.json()
 
+    if "data" not in data:
+        _LOGGER.error(
+            "API response: %s",
+            data
+        )
+        raise Exception("API did not return GDP data.")
+
     gdp_data = data["data"][:years_to_fetch]
 
-    print("\nLast 10 Years Real GDP:\n")
+    _LOGGER.info(
+        "Last %s Years Real GDP",
+        years_to_fetch
+    )
 
     for item in gdp_data:
-        print(f"Year: {item['date']} GDP: {item['value']}")
+        _LOGGER.info(
+            "Year: %s GDP: %s",
+            item["date"],
+            item["value"]
+        )
 
     upload_gdp_to_s3(gdp_data)
 
