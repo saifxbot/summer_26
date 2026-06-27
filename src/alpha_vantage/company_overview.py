@@ -3,6 +3,7 @@ import logging
 import os
 import tempfile
 import time
+from pathlib import Path
 
 import boto3
 import pandas as pd
@@ -16,7 +17,7 @@ logging.basicConfig(
 
 _LOGGER = logging.getLogger(__name__)
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_config():

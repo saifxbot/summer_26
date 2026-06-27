@@ -1,19 +1,31 @@
 import configparser
+import logging
 import os
 import tempfile
 import time
+from pathlib import Path
 
 import boto3
 import pandas as pd
 import requests
 
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+logging.getLogger("botocore").setLevel(logging.WARNING)
+logging.getLogger("boto3").setLevel(logging.WARNING)
+
+_LOGGER = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_config():
     config = configparser.ConfigParser()
-    config_path = os.path.join(PROJECT_ROOT, "settings.ini")
+    config_path = PROJECT_ROOT / "settings.ini"
     config.read(config_path)
     return config
 
@@ -52,8 +64,16 @@ def upload_to_s3(df):
         s3_key
     )
 
-    print(f"Created CSV gzip file: {local_file}")
-    print(f"Uploaded successfully to s3://{bucket}/{s3_key}")
+    _LOGGER.info(
+        "Created CSV gzip file: %s",
+        local_file
+    )
+
+    _LOGGER.info(
+        "Uploaded successfully to s3://%s/%s",
+        bucket,
+        s3_key
+    )
 
 
 def fetch_daily_stock(symbol):
@@ -78,8 +98,11 @@ def fetch_daily_stock(symbol):
     data = response.json()
 
     if "Time Series (Daily)" not in data:
-        print(f"API did not return daily data for {symbol}")
-        print(data)
+        _LOGGER.error(
+            "API did not return daily data for %s. Response: %s",
+            symbol,
+            data
+        )
         return []
 
     time_series = data["Time Series (Daily)"]
@@ -115,7 +138,10 @@ def get_daily_stocks():
     for symbol in symbols:
         symbol = symbol.strip()
 
-        print(f"Fetching daily stock data for {symbol}")
+        _LOGGER.info(
+            "Fetching daily stock data for %s",
+            symbol
+        )
 
         rows = fetch_daily_stock(symbol)
 
@@ -125,10 +151,14 @@ def get_daily_stocks():
 
     df = pd.DataFrame(all_rows)
 
-    print(f"Total daily stock rows fetched: {len(df)}")
+    _LOGGER.info(
+        "Total daily stock rows fetched: %s",
+        len(df)
+    )
 
     if not df.empty:
-        print(
+        _LOGGER.info(
+            "Daily stock sample:\n%s",
             df[
                 [
                     "stock_date",
@@ -137,7 +167,7 @@ def get_daily_stocks():
                     "close_price",
                     "volume"
                 ]
-            ].head(10)
+            ].head(10).to_string(index=False)
         )
 
     upload_to_s3(df)

@@ -13,7 +13,9 @@ redshift = boto3.client("redshift-data")
 TABLE_MAPPING = {
     "real_gdp/real_gdp.csv.gz": "gdp_stg",
     "exchange_rates/exchange_rates.csv.gz": "exchange_rate_stg",
-    "company_overview/company_overview.csv.gz": "company_overview_stg"
+    "company_overview/company_overview.csv.gz": "company_overview_stg",
+    "daily_stock/daily_stock.csv.gz": "daily_stock_stg",
+    "news_sentiment/news_sentiment.csv.gz": "news_sentiment_stg"
 }
 
 
@@ -78,6 +80,47 @@ def get_table_columns(workgroup, database, table):
     ]
 
 
+def get_metadata_key(table):
+    return f"metadata/{table}_metadata.csv"
+
+
+def get_metadata_columns(bucket, table):
+    metadata_key = get_metadata_key(table)
+
+    print("Metadata key:", metadata_key)
+
+    obj = s3.get_object(
+        Bucket=bucket,
+        Key=metadata_key
+    )
+
+    metadata_data = obj["Body"].read().decode("utf-8")
+
+    reader = csv.DictReader(
+        io.StringIO(metadata_data)
+    )
+
+    if "fieldname" not in reader.fieldnames:
+        raise Exception(
+            f"Metadata file {metadata_key} missing fieldname column"
+        )
+
+    metadata_columns = []
+
+    for row in reader:
+        fieldname = row["fieldname"].strip()
+
+        if fieldname:
+            metadata_columns.append(fieldname)
+
+    if not metadata_columns:
+        raise Exception(
+            f"No metadata columns found in {metadata_key}"
+        )
+
+    return metadata_columns
+
+
 def get_s3_key_from_event(event):
     sns_message = event["Records"][0]["Sns"]["Message"]
     s3_event = json.loads(sns_message)
@@ -126,12 +169,27 @@ def copy_to_redshift(event, context):
         table
     )
 
+    metadata_columns = get_metadata_columns(
+        bucket,
+        table
+    )
+
     print("File columns:", file_columns)
+    print("Metadata columns:", metadata_columns)
     print("Table columns:", table_columns)
 
-    if file_columns != table_columns:
+    if metadata_columns != table_columns:
         raise Exception(
-            f"Column mismatch. File columns: {file_columns}, Table columns: {table_columns}"
+            f"Metadata and table column mismatch. "
+            f"Metadata columns: {metadata_columns}, "
+            f"Table columns: {table_columns}"
+        )
+
+    if file_columns != metadata_columns:
+        raise Exception(
+            f"File and metadata column mismatch. "
+            f"File columns: {file_columns}, "
+            f"Metadata columns: {metadata_columns}"
         )
 
     rows = list(reader)

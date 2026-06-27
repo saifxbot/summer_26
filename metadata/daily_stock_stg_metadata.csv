@@ -1,0 +1,8 @@
+fieldname,keyflag,redshift_datatype
+stock_date,X,date
+symbol,,varchar(20)
+open_price,,double precision
+high_price,,double precision
+low_price,,double precision
+close_price,,double precision
+volume,,bigint
