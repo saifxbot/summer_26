@@ -1,7 +1,7 @@
 import time
 import requests
 
-url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/dts/deposits_withdrawals_operating_cash"
+url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/rates_of_exchange"
 
 page_number = 1
 page_size = 1000
