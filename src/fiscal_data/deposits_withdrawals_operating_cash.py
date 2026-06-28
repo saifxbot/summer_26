@@ -89,17 +89,18 @@ def get_with_retry(url, params, max_retries=5):
             time.sleep(attempt * 2)
 
 
-def map_operating_cash_balance(row):
+def map_deposits_withdrawals_operating_cash(row):
     return {
         "record_date": clean_value(row.get("record_date")),
         "account_type": clean_value(row.get("account_type")),
-        "close_today_bal": clean_numeric(row.get("close_today_bal")),
-        "open_today_bal": clean_numeric(row.get("open_today_bal")),
-        "open_month_bal": clean_numeric(row.get("open_month_bal")),
-        "open_fiscal_year_bal": clean_numeric(row.get("open_fiscal_year_bal")),
+        "transaction_type": clean_value(row.get("transaction_type")),
+        "transaction_catg": clean_value(row.get("transaction_catg")),
+        "transaction_catg_desc": clean_value(row.get("transaction_catg_desc")),
+        "transaction_today_amt": clean_numeric(row.get("transaction_today_amt")),
+        "transaction_mtd_amt": clean_numeric(row.get("transaction_mtd_amt")),
+        "transaction_fytd_amt": clean_numeric(row.get("transaction_fytd_amt")),
         "table_nbr": clean_value(row.get("table_nbr")),
         "table_nm": clean_value(row.get("table_nm")),
-        "sub_table_name": clean_value(row.get("sub_table_name")),
         "src_line_nbr": clean_numeric(row.get("src_line_nbr")),
         "record_fiscal_year": clean_numeric(row.get("record_fiscal_year")),
         "record_fiscal_quarter": clean_numeric(row.get("record_fiscal_quarter")),
@@ -110,12 +111,18 @@ def map_operating_cash_balance(row):
     }
 
 
-def fetch_operating_cash_balance():
+def fetch_deposits_withdrawals_operating_cash():
     config = load_config()
 
     base_url = config.get("fiscaldata", "base_url")
-    endpoint = config.get("operating_cash_balance", "endpoint")
-    page_size = config.getint("operating_cash_balance", "page_size")
+    endpoint = config.get(
+        "deposits_withdrawals_operating_cash",
+        "endpoint"
+    )
+    page_size = config.getint(
+        "deposits_withdrawals_operating_cash",
+        "page_size"
+    )
 
     url = f"{base_url}{endpoint}"
 
@@ -151,7 +158,7 @@ def fetch_operating_cash_balance():
             break
 
         for row in page_rows:
-            rows.append(map_operating_cash_balance(row))
+            rows.append(map_deposits_withdrawals_operating_cash(row))
 
         if len(page_rows) < page_size:
             break
@@ -161,13 +168,13 @@ def fetch_operating_cash_balance():
     df = pd.DataFrame(rows)
 
     _LOGGER.info(
-        "Total operating cash balance rows fetched: %s",
+        "Total deposits withdrawals operating cash rows fetched: %s",
         len(df)
     )
 
     if not df.empty:
         _LOGGER.info(
-            "Operating cash balance sample:\n%s",
+            "Deposits withdrawals operating cash sample:\n%s",
             df.head(5).to_string(index=False)
         )
 
@@ -178,12 +185,15 @@ def upload_to_s3(df):
     config = load_config()
 
     bucket = config.get("storage", "bucket_name")
-    s3_key = config.get("storage", "operating_cash_balance_key")
+    s3_key = config.get(
+        "storage",
+        "deposits_withdrawals_operating_cash_key"
+    )
     region = config.get("aws", "region")
 
     local_file = os.path.join(
         tempfile.gettempdir(),
-        "operating_cash_balance.csv.gz"
+        "deposits_withdrawals_operating_cash.csv.gz"
     )
 
     df.to_csv(
@@ -208,10 +218,10 @@ def upload_to_s3(df):
 
 
 def main():
-    df = fetch_operating_cash_balance()
+    df = fetch_deposits_withdrawals_operating_cash()
 
     if df.empty:
-        raise Exception("No operating cash balance data fetched")
+        raise Exception("No deposits withdrawals operating cash data fetched")
 
     upload_to_s3(df)
 

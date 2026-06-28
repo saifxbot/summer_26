@@ -1,7 +1,7 @@
 import time
 import requests
 
-url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/dts/operating_cash_balance"
+url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/dts/deposits_withdrawals_operating_cash"
 
 page_number = 1
 page_size = 1000
@@ -11,14 +11,9 @@ all_rows = []
 def get_with_retry(url, params, max_retries=5):
     for attempt in range(1, max_retries + 1):
         try:
-            response = requests.get(
-                url,
-                params=params,
-                timeout=30
-            )
+            response = requests.get(url, params=params, timeout=30)
 
             if response.status_code == 400:
-                print("400 received. Probably no more pages.")
                 return None
 
             response.raise_for_status()
@@ -46,9 +41,7 @@ while True:
     if response is None:
         break
 
-    data = response.json()
-    rows = data.get("data", [])
-
+    rows = response.json().get("data", [])
     print(f"Page {page_number}: {len(rows)} rows")
 
     if not rows:
