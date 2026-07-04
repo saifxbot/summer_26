@@ -1,50 +1,39 @@
 import boto3
 import gzip
 import csv
-import io
 import os
 import time
 import json
+import logging
 
 s3 = boto3.client("s3")
 redshift = boto3.client("redshift-data")
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-TABLE_MAPPING = {
-    "real_gdp/real_gdp.csv.gz": {
-        "schema": "public",
-        "table": "gdp_stg"
-    },
-    "exchange_rates/exchange_rates.csv.gz": {
-        "schema": "public",
-        "table": "exchange_rate_stg"
-    },
-    "company_overview/company_overview.csv.gz": {
-        "schema": "public",
-        "table": "company_overview_stg"
-    },
-    "daily_stock/daily_stock.csv.gz": {
-        "schema": "public",
-        "table": "daily_stock_stg"
-    },
-    "news_sentiment/news_sentiment.csv.gz": {
-        "schema": "public",
-        "table": "news_sentiment_stg"
-    },
-    "operating_cash_balance/operating_cash_balance.csv.gz": {
-        "schema": "source_fiscaldata",
-        "table": "operating_cash_balance_stg"
-    }
-}
+logger = logging.getLogger(__name__)
 
 
 def wait_for_statement(statement_id):
+    """
+    Wait until a Redshift Data API statement reaches a final status.
+
+    Purpose:
+        Polls Redshift Data API until the SQL statement is FINISHED,
+        FAILED, or ABORTED.
+
+    Returns:
+        dict: Final statement execution result.
+    """
     while True:
         result = redshift.describe_statement(Id=statement_id)
         status = result["Status"]
 
-        print("Redshift statement id:", statement_id)
-        print("Redshift status:", status)
+        logger.info("Redshift statement id: %s", statement_id)
+        logger.info("Redshift status: %s", status)
 
         if status in ["FINISHED", "FAILED", "ABORTED"]:
             return result
@@ -53,8 +42,18 @@ def wait_for_statement(statement_id):
 
 
 def execute_sql(workgroup, database, sql):
-    print("Executing SQL:")
-    print(sql)
+    """
+    Execute SQL in Redshift Serverless.
+
+    Purpose:
+        Runs SQL using Redshift Data API and validates that the
+        statement completes successfully.
+
+    Returns:
+        dict: Final Redshift statement result.
+    """
+    logger.info("Executing SQL:")
+    logger.info(sql)
 
     response = redshift.execute_statement(
         WorkgroupName=workgroup,
@@ -66,14 +65,23 @@ def execute_sql(workgroup, database, sql):
     result = wait_for_statement(statement_id)
 
     if result["Status"] != "FINISHED":
-        print("Redshift error result:")
-        print(result)
+        logger.error("Redshift error result: %s", result)
         raise Exception("Redshift statement failed")
 
     return result
 
 
 def get_statement_records(statement_id):
+    """
+    Retrieve all records from a Redshift Data API result set.
+
+    Purpose:
+        Handles paginated Redshift query results by reading all pages
+        using NextToken.
+
+    Returns:
+        list: All records returned by the query.
+    """
     records = []
     next_token = None
 
@@ -98,6 +106,17 @@ def get_statement_records(statement_id):
 
 
 def extract_value(field):
+    """
+    Extract a plain value from a Redshift Data API typed field.
+
+    Purpose:
+        Redshift Data API returns values with keys such as stringValue,
+        longValue, doubleValue, booleanValue, and isNull. This method
+        normalizes them into simple Python values.
+
+    Returns:
+        str | None: Extracted field value.
+    """
     if "stringValue" in field:
         return field["stringValue"]
 
@@ -117,12 +136,17 @@ def extract_value(field):
 
 
 def get_table_columns(workgroup, database, schema, table):
-    print("Fetching table columns")
-    print("Workgroup:", workgroup)
-    print("Database:", database)
-    print("Schema:", schema)
-    print("Table:", table)
+    """
+    Get ordered column names from a Redshift table.
 
+    Purpose:
+        Reads information_schema.columns to retrieve the Redshift table
+        column list in ordinal position order. This is used for schema
+        validation before loading data.
+
+    Returns:
+        list: Ordered table column names.
+    """
     sql = f"""
     SELECT column_name
     FROM information_schema.columns
@@ -141,8 +165,7 @@ def get_table_columns(workgroup, database, schema, table):
     result = wait_for_statement(statement_id)
 
     if result["Status"] != "FINISHED":
-        print("Redshift error:")
-        print(result)
+        logger.error("Failed to fetch table columns: %s", result)
         raise Exception("Failed to fetch table columns")
 
     records = get_statement_records(statement_id)
@@ -155,19 +178,89 @@ def get_table_columns(workgroup, database, schema, table):
             if value:
                 table_columns.append(value)
 
-    print("Table columns:", table_columns)
-
     return table_columns
 
 
+def get_schema_mapping(bucket, s3_key):
+    """
+    Read target schema and table mapping from S3 metadata file.
+
+    Purpose:
+        Keeps S3 key to Redshift schema/table mapping outside Lambda code.
+        This allows new datasets to be onboarded by updating
+        metadata_schema_mapping.csv instead of redeploying Lambda.
+
+    Returns:
+        dict: Target schema and table information.
+    """
+    mapping_key = "metadata/table_mapping/metadata_schema_mapping.csv"
+
+    logger.info("Schema mapping key: %s", mapping_key)
+
+    obj = s3.get_object(
+        Bucket=bucket,
+        Key=mapping_key
+    )
+
+    mapping_data = obj["Body"].read().decode("utf-8-sig")
+
+    reader = csv.DictReader(
+        mapping_data.splitlines()
+    )
+
+    required_columns = {
+        "s3_key",
+        "schema_name",
+        "table_name"
+    }
+
+    if not reader.fieldnames or not required_columns.issubset(
+        reader.fieldnames
+    ):
+        raise Exception(
+            f"Schema mapping file {mapping_key} missing required columns"
+        )
+
+    for row in reader:
+        if row["s3_key"].strip() == s3_key:
+            return {
+                "schema": row["schema_name"].strip(),
+                "table": row["table_name"].strip()
+            }
+
+    raise Exception(
+        f"No schema mapping found for {s3_key}"
+    )
+
+
 def get_metadata_key(table):
+    """
+    Build metadata file key for a Redshift table.
+
+    Purpose:
+        Returns the S3 key for the table-level metadata file.
+
+    Returns:
+        str: S3 metadata file key.
+    """
     return f"metadata/{table}_metadata.csv"
 
 
 def get_metadata_columns(bucket, table):
+    """
+    Read expected column names from table metadata CSV in S3.
+
+    Purpose:
+        Extracts the ordered fieldname list from the metadata file.
+        The result is compared against the CSV header and Redshift
+        table column list.
+
+    Returns:
+        list: Ordered metadata column names.
+    """
     metadata_key = get_metadata_key(table)
 
-    print("Metadata key:", metadata_key)
+    logger.info("Metadata key: %s", metadata_key)
 
     obj = s3.get_object(
         Bucket=bucket,
@@ -177,7 +270,7 @@ def get_metadata_columns(bucket, table):
     metadata_data = obj["Body"].read().decode("utf-8-sig")
 
     reader = csv.DictReader(
-        io.StringIO(metadata_data)
+        metadata_data.splitlines()
     )
 
     if not reader.fieldnames or "fieldname" not in reader.fieldnames:
@@ -201,7 +294,43 @@ def get_metadata_columns(bucket, table):
     return metadata_columns
 
 
+def get_csv_header_columns(bucket, s3_key):
+    """
+    Read only the header row from a gzip-compressed CSV file in S3.
+
+    Purpose:
+        Avoids loading the full CSV.GZ file into Lambda memory. This
+        allows large datasets to be validated safely before Redshift COPY.
+
+    Returns:
+        list: Ordered CSV header columns.
+    """
+    obj = s3.get_object(
+        Bucket=bucket,
+        Key=s3_key
+    )
+
+    with gzip.GzipFile(fileobj=obj["Body"]) as gz:
+        header_line = gz.readline().decode("utf-8-sig").strip()
+
+    logger.info("CSV header line: %s", header_line)
+
+    reader = csv.reader([header_line])
+    return next(reader)
+
+
 def get_s3_key_from_event(event):
+    """
+    Extract S3 object key from an SNS-wrapped S3 event.
+
+    Purpose:
+        The Lambda is triggered by SNS. The original S3 event is inside
+        the SNS message as a JSON string. This method parses it and
+        returns the uploaded object key.
+
+    Returns:
+        str: Uploaded S3 object key.
+    """
     sns_message = event["Records"][0]["Sns"]["Message"]
     s3_event = json.loads(sns_message)
 
@@ -209,56 +338,57 @@ def get_s3_key_from_event(event):
 
 
 def copy_to_redshift(event, context):
-    print("Lambda triggered")
-    print("Lambda version: schema-aware copy load")
+    """
+    Validate an uploaded CSV.GZ file and load it into Redshift.
+
+    Purpose:
+        Handles the complete ingestion process:
+        - extract S3 key from SNS event
+        - skip metadata files
+        - resolve target schema/table from metadata_schema_mapping.csv
+        - validate CSV header against metadata and Redshift table columns
+        - load data into Redshift using COPY
+
+    Returns:
+        dict: Lambda response with load status.
+    """
+    logger.info("Lambda triggered")
+    logger.info("Lambda version: metadata mapping + logger copy load")
 
     bucket = os.environ["BUCKET"]
     workgroup = os.environ["WORKGROUP"]
     database = os.environ["DATABASE"]
 
-    print("Env BUCKET:", bucket)
-    print("Env WORKGROUP:", workgroup)
-    print("Env DATABASE:", database)
+    logger.info("Env BUCKET: %s", bucket)
+    logger.info("Env WORKGROUP: %s", workgroup)
+    logger.info("Env DATABASE: %s", database)
 
     s3_key = get_s3_key_from_event(event)
 
-    print("Triggered S3 key:", s3_key)
+    logger.info("Triggered S3 key: %s", s3_key)
 
     if s3_key.startswith("metadata/"):
-        print(f"Skipping metadata file: {s3_key}")
+        logger.info("Skipping metadata file: %s", s3_key)
         return {
             "statusCode": 200,
             "body": f"Skipped metadata file: {s3_key}"
         }
 
-    if s3_key not in TABLE_MAPPING:
-        raise Exception(
-            f"No staging table mapping found for {s3_key}"
-        )
+    mapping = get_schema_mapping(
+        bucket,
+        s3_key
+    )
 
-    mapping = TABLE_MAPPING[s3_key]
     schema = mapping["schema"]
     table = mapping["table"]
 
-    print("Target schema:", schema)
-    print("Target table:", table)
+    logger.info("Target schema: %s", schema)
+    logger.info("Target table: %s", table)
 
-    obj = s3.get_object(
-        Bucket=bucket,
-        Key=s3_key
+    file_columns = get_csv_header_columns(
+        bucket,
+        s3_key
     )
-
-    compressed = obj["Body"].read()
-
-    csv_data = gzip.decompress(
-        compressed
-    ).decode("utf-8-sig")
-
-    reader = csv.DictReader(
-        io.StringIO(csv_data)
-    )
-
-    file_columns = reader.fieldnames
 
     if not file_columns:
         raise Exception("CSV file has no header columns")
@@ -275,9 +405,9 @@ def copy_to_redshift(event, context):
         table
     )
 
-    print("File columns:", file_columns)
-    print("Metadata columns:", metadata_columns)
-    print("Table columns:", table_columns)
+    logger.info("File columns: %s", file_columns)
+    logger.info("Metadata columns: %s", metadata_columns)
+    logger.info("Table columns: %s", table_columns)
 
     if metadata_columns != table_columns:
         raise Exception(
@@ -312,7 +442,7 @@ def copy_to_redshift(event, context):
         copy_sql
     )
 
-    print(f"Copied file into {schema}.{table}")
+    logger.info("Copied file into %s.%s", schema, table)
 
     return {
         "statusCode": 200,
@@ -321,4 +451,13 @@ def copy_to_redshift(event, context):
 
 
 def lambda_handler(event, context):
+    """
+    Lambda entry point.
+
+    Purpose:
+        Delegates the SNS-triggered ingestion event to copy_to_redshift.
+
+    Returns:
+        dict: Lambda response.
+    """
     return copy_to_redshift(event, context)
