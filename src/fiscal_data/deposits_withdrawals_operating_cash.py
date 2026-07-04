@@ -61,7 +61,7 @@ def clean_numeric(value):
     return value.replace(",", "").strip()
 
 
-def get_with_retry(url, params, max_retries=5):
+def get_with_retry(url, params, max_retries=10):
     for attempt in range(1, max_retries + 1):
         try:
             response = requests.get(
@@ -86,7 +86,7 @@ def get_with_retry(url, params, max_retries=5):
             if attempt == max_retries:
                 raise
 
-            time.sleep(attempt * 2)
+            time.sleep(min(attempt * 5, 60))
 
 
 def map_deposits_withdrawals_operating_cash(row):
@@ -101,6 +101,7 @@ def map_deposits_withdrawals_operating_cash(row):
         "transaction_fytd_amt": clean_numeric(row.get("transaction_fytd_amt")),
         "table_nbr": clean_value(row.get("table_nbr")),
         "table_nm": clean_value(row.get("table_nm")),
+        "sub_table_name": clean_value(row.get("sub_table_name")),
         "src_line_nbr": clean_numeric(row.get("src_line_nbr")),
         "record_fiscal_year": clean_numeric(row.get("record_fiscal_year")),
         "record_fiscal_quarter": clean_numeric(row.get("record_fiscal_quarter")),
