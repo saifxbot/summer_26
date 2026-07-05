@@ -9,12 +9,8 @@ import logging
 s3 = boto3.client("s3")
 redshift = boto3.client("redshift-data")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 def wait_for_statement(statement_id):
@@ -52,8 +48,7 @@ def execute_sql(workgroup, database, sql):
     Returns:
         dict: Final Redshift statement result.
     """
-    logger.info("Executing SQL:")
-    logger.info(sql)
+    logger.info("Executing SQL: %s", sql)
 
     response = redshift.execute_statement(
         WorkgroupName=workgroup,
@@ -144,8 +139,13 @@ def get_table_columns(workgroup, database, schema, table):
         column list in ordinal position order. This is used for schema
         validation before loading data.
 
+        Audit/pipeline-only columns (prefixed meta_, e.g. meta_loaded_at)
+        are excluded, since they are populated by Redshift defaults
+        (e.g. DEFAULT GETDATE()) and never appear in the source CSV or
+        the metadata file.
+
     Returns:
-        list: Ordered table column names.
+        list: Ordered table column names, excluding meta_ audit columns.
     """
     sql = f"""
     SELECT column_name
@@ -177,6 +177,11 @@ def get_table_columns(workgroup, database, schema, table):
             value = extract_value(row[0])
             if value:
                 table_columns.append(value)
+
+    table_columns = [
+        column for column in table_columns
+        if not column.startswith("meta_")
+    ]
 
     return table_columns
 
@@ -347,107 +352,118 @@ def copy_to_redshift(event, context):
         - skip metadata files
         - resolve target schema/table from metadata_schema_mapping.csv
         - validate CSV header against metadata and Redshift table columns
-        - load data into Redshift using COPY
+        - load data into Redshift using COPY, with an explicit column
+          list so audit-only columns (e.g. meta_loaded_at) can carry
+          their own DEFAULT (e.g. GETDATE()) without needing to be
+          present in the source CSV
 
     Returns:
         dict: Lambda response with load status.
     """
-    logger.info("Lambda triggered")
-    logger.info("Lambda version: metadata mapping + logger copy load")
+    try:
+        logger.info("Lambda triggered")
+        logger.info("Lambda version: meta_ audit column support")
 
-    bucket = os.environ["BUCKET"]
-    workgroup = os.environ["WORKGROUP"]
-    database = os.environ["DATABASE"]
+        bucket = os.environ["BUCKET"]
+        workgroup = os.environ["WORKGROUP"]
+        database = os.environ["DATABASE"]
 
-    logger.info("Env BUCKET: %s", bucket)
-    logger.info("Env WORKGROUP: %s", workgroup)
-    logger.info("Env DATABASE: %s", database)
+        logger.info("Env BUCKET: %s", bucket)
+        logger.info("Env WORKGROUP: %s", workgroup)
+        logger.info("Env DATABASE: %s", database)
 
-    s3_key = get_s3_key_from_event(event)
+        s3_key = get_s3_key_from_event(event)
 
-    logger.info("Triggered S3 key: %s", s3_key)
+        logger.info("Triggered S3 key: %s", s3_key)
 
-    if s3_key.startswith("metadata/"):
-        logger.info("Skipping metadata file: %s", s3_key)
+        if s3_key.startswith("metadata/"):
+            logger.info("Skipping metadata file: %s", s3_key)
+            return {
+                "statusCode": 200,
+                "body": f"Skipped metadata file: {s3_key}"
+            }
+
+        mapping = get_schema_mapping(
+            bucket,
+            s3_key
+        )
+
+        schema = mapping["schema"]
+        table = mapping["table"]
+
+        logger.info("Target schema: %s", schema)
+        logger.info("Target table: %s", table)
+
+        file_columns = get_csv_header_columns(
+            bucket,
+            s3_key
+        )
+
+        if not file_columns:
+            raise Exception("CSV file has no header columns")
+
+        table_columns = get_table_columns(
+            workgroup,
+            database,
+            schema,
+            table
+        )
+
+        metadata_columns = get_metadata_columns(
+            bucket,
+            table
+        )
+
+        logger.info("File columns: %s", file_columns)
+        logger.info("Metadata columns: %s", metadata_columns)
+        logger.info("Table columns (excluding meta_ audit columns): %s", table_columns)
+
+        if metadata_columns != table_columns:
+            raise Exception(
+                f"Metadata and table column mismatch. "
+                f"Metadata columns: {metadata_columns}, "
+                f"Table columns: {table_columns}"
+            )
+
+        if file_columns != metadata_columns:
+            raise Exception(
+                f"File and metadata column mismatch. "
+                f"File columns: {file_columns}, "
+                f"Metadata columns: {metadata_columns}"
+            )
+
+        column_list = ", ".join(metadata_columns)
+
+        copy_sql = f"""
+        TRUNCATE TABLE {schema}.{table};
+
+        COPY {schema}.{table}
+        ({column_list})
+        FROM 's3://{bucket}/{s3_key}'
+        IAM_ROLE default
+        FORMAT AS CSV
+        IGNOREHEADER 1
+        GZIP
+        EMPTYASNULL
+        BLANKSASNULL;
+        """
+
+        execute_sql(
+            workgroup,
+            database,
+            copy_sql
+        )
+
+        logger.info("Copied file into %s.%s", schema, table)
+
         return {
             "statusCode": 200,
-            "body": f"Skipped metadata file: {s3_key}"
+            "body": f"Copied file into {schema}.{table}"
         }
 
-    mapping = get_schema_mapping(
-        bucket,
-        s3_key
-    )
-
-    schema = mapping["schema"]
-    table = mapping["table"]
-
-    logger.info("Target schema: %s", schema)
-    logger.info("Target table: %s", table)
-
-    file_columns = get_csv_header_columns(
-        bucket,
-        s3_key
-    )
-
-    if not file_columns:
-        raise Exception("CSV file has no header columns")
-
-    table_columns = get_table_columns(
-        workgroup,
-        database,
-        schema,
-        table
-    )
-
-    metadata_columns = get_metadata_columns(
-        bucket,
-        table
-    )
-
-    logger.info("File columns: %s", file_columns)
-    logger.info("Metadata columns: %s", metadata_columns)
-    logger.info("Table columns: %s", table_columns)
-
-    if metadata_columns != table_columns:
-        raise Exception(
-            f"Metadata and table column mismatch. "
-            f"Metadata columns: {metadata_columns}, "
-            f"Table columns: {table_columns}"
-        )
-
-    if file_columns != metadata_columns:
-        raise Exception(
-            f"File and metadata column mismatch. "
-            f"File columns: {file_columns}, "
-            f"Metadata columns: {metadata_columns}"
-        )
-
-    copy_sql = f"""
-    TRUNCATE TABLE {schema}.{table};
-
-    COPY {schema}.{table}
-    FROM 's3://{bucket}/{s3_key}'
-    IAM_ROLE default
-    FORMAT AS CSV
-    IGNOREHEADER 1
-    GZIP
-    EMPTYASNULL
-    BLANKSASNULL;
-    """
-
-    execute_sql(
-        workgroup,
-        database,
-        copy_sql
-    )
-
-    logger.info("Copied file into %s.%s", schema, table)
-
-    return {
-        "statusCode": 200,
-        "body": f"Copied file into {schema}.{table}"
-    }
+    except Exception:
+        logger.exception("Lambda failed during S3 to Redshift load")
+        raise
 
 
 def lambda_handler(event, context):
