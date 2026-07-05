@@ -24,6 +24,7 @@ select
         coalesce(md5(record_calendar_day::text), ' ')
     )) as meta_datahash
     ,'INS' as meta_etl_operation_extract
+    ,stg.meta_loaded_at as meta_updated_date_extract
 from
     source_fiscaldata.operating_cash_balance_stg stg
 with no schema binding;
