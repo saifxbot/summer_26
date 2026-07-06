@@ -1,0 +1,17 @@
+fieldname,keyflag,redshift_datatype
+record_date,X,date
+account_type,X,varchar(100)
+close_today_bal,,bigint
+open_today_bal,,bigint
+open_month_bal,,bigint
+open_fiscal_year_bal,,bigint
+table_nbr,,varchar(20)
+table_nm,,varchar(200)
+sub_table_name,,varchar(200)
+src_line_nbr,X,integer
+record_fiscal_year,,integer
+record_fiscal_quarter,,integer
+record_calendar_year,,integer
+record_calendar_quarter,,integer
+record_calendar_month,,integer
+record_calendar_day,,integer
