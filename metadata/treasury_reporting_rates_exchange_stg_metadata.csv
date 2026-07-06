@@ -1,0 +1,14 @@
+fieldname,keyflag,redshift_datatype
+record_date,X,date
+country,X,varchar(100)
+currency,X,varchar(100)
+country_currency_desc,,varchar(200)
+exchange_rate,,"decimal(18,6)"
+effective_date,,date
+src_line_nbr,X,integer
+record_fiscal_year,,integer
+record_fiscal_quarter,,integer
+record_calendar_year,,integer
+record_calendar_quarter,,integer
+record_calendar_month,,integer
+record_calendar_day,,integer
