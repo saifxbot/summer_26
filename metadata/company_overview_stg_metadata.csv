@@ -1,0 +1,37 @@
+fieldname,keyflag,redshift_datatype
+symbol,X,varchar(20)
+asset_type,,varchar(50)
+name,,varchar(255)
+description,,varchar(5000)
+cik,,varchar(50)
+exchange,,varchar(50)
+currency,,varchar(20)
+country,,varchar(100)
+sector,,varchar(100)
+industry,,varchar(255)
+address,,varchar(500)
+official_site,,varchar(500)
+fiscal_year_end,,varchar(50)
+latest_quarter,,date
+market_capitalization,,bigint
+ebitda,,bigint
+pe_ratio,,double precision
+peg_ratio,,double precision
+book_value,,double precision
+dividend_per_share,,double precision
+dividend_yield,,double precision
+eps,,double precision
+revenue_per_share_ttm,,double precision
+profit_margin,,double precision
+operating_margin_ttm,,double precision
+return_on_assets_ttm,,double precision
+return_on_equity_ttm,,double precision
+revenue_ttm,,bigint
+gross_profit_ttm,,bigint
+analyst_target_price,,double precision
+beta,,double precision
+week_52_high,,double precision
+week_52_low,,double precision
+shares_outstanding,,bigint
+dividend_date,,date
+ex_dividend_date,,date

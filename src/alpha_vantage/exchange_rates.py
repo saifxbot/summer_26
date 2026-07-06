@@ -1,18 +1,30 @@
 import configparser
+import logging
 import os
 import tempfile
+from pathlib import Path
 
 import boto3
 import pandas as pd
 import requests
 
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+logging.getLogger("botocore").setLevel(logging.WARNING)
+logging.getLogger("boto3").setLevel(logging.WARNING)
+
+_LOGGER = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_config():
     config = configparser.ConfigParser()
-    config_path = os.path.join(PROJECT_ROOT, "settings.ini")
+    config_path = PROJECT_ROOT / "settings.ini"
     config.read(config_path)
     return config
 
@@ -51,8 +63,16 @@ def upload_to_s3(df):
         s3_key
     )
 
-    print(f"Created CSV gzip file: {local_file}")
-    print(f"Uploaded successfully to s3://{bucket}/{s3_key}")
+    _LOGGER.info(
+        "Created CSV gzip file: %s",
+        local_file
+    )
+
+    _LOGGER.info(
+        "Uploaded successfully to s3://%s/%s",
+        bucket,
+        s3_key
+    )
 
 
 def get_exchange_rates():
@@ -80,6 +100,10 @@ def get_exchange_rates():
 
     data = response.json()
 
+    if "Time Series FX (Daily)" not in data:
+        _LOGGER.error("API response: %s", data)
+        raise Exception("API did not return exchange rate data.")
+
     time_series = data["Time Series FX (Daily)"]
 
     rows = []
@@ -96,7 +120,10 @@ def get_exchange_rates():
 
     df = pd.DataFrame(rows)
 
-    print(f"Total rows fetched: {len(df)}")
+    _LOGGER.info(
+        "Total exchange rate rows fetched: %s",
+        len(df)
+    )
 
     upload_to_s3(df)
 
