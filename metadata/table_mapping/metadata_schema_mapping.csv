@@ -1,0 +1,9 @@
+s3_key,schema_name,table_name
+real_gdp/real_gdp.csv.gz,public,gdp_stg
+exchange_rates/exchange_rates.csv.gz,public,exchange_rate_stg
+company_overview/company_overview.csv.gz,public,company_overview_stg
+daily_stock/daily_stock.csv.gz,public,daily_stock_stg
+news_sentiment/news_sentiment.csv.gz,public,news_sentiment_stg
+operating_cash_balance/operating_cash_balance.csv.gz,source_fiscaldata,operating_cash_balance_stg
+deposits_withdrawals_operating_cash/deposits_withdrawals_operating_cash.csv.gz,source_fiscaldata,deposits_withdrawals_operating_cash_stg
+treasury_reporting_rates_exchange/treasury_reporting_rates_exchange.csv.gz,source_fiscaldata,treasury_reporting_rates_exchange_stg

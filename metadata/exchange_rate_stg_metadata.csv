@@ -1,0 +1,5 @@
+fieldname,keyflag,redshift_datatype
+rate_date,X,date
+from_currency,,varchar(10)
+to_currency,,varchar(10)
+exchange_rate,,double precision
