@@ -1,0 +1,30 @@
+{
+  "family": "deposits-withdrawals-operating-cash-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "1024",
+  "memory": "2048",
+  "containerDefinitions": [
+    {
+      "name": "deposits-withdrawals-operating-cash",
+      "image": "811783767965.dkr.ecr.eu-west-1.amazonaws.com/summer26-pipeline:latest",
+      "essential": true,
+      "command": [
+        "python",
+        "src/fiscal_data/deposits_withdrawals_operating_cash.py"
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/deposits-withdrawals-operating-cash",
+          "awslogs-region": "eu-west-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ],
+  "executionRoleArn": "arn:aws:iam::811783767965:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::811783767965:role/ecsTaskRole"
+}
