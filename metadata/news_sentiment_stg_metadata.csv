@@ -1,0 +1,14 @@
+fieldname,keyflag,redshift_datatype
+time_published,X,timestamp
+title,,varchar(1000)
+url,,varchar(2000)
+authors,,varchar(2000)
+summary,,varchar(10000)
+banner_image,,varchar(2000)
+source,,varchar(255)
+category_within_source,,varchar(255)
+source_domain,,varchar(255)
+topics,,varchar(5000)
+overall_sentiment_score,,double precision
+overall_sentiment_label,,varchar(100)
+ticker_sentiment,,varchar(5000)
