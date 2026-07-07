@@ -139,10 +139,10 @@ def get_table_columns(workgroup, database, schema, table):
         column list in ordinal position order. This is used for schema
         validation before loading data.
 
-        Audit/pipeline-only columns (prefixed meta_, e.g. meta_loaded_at)
-        are excluded, since they are populated by Redshift defaults
-        (e.g. DEFAULT GETDATE()) and never appear in the source CSV or
-        the metadata file.
+        Audit/pipeline-only columns (prefixed meta_, e.g. meta_loaded_at,
+        meta_from_source) are excluded, since they are populated by
+        Redshift defaults or by this Lambda after the COPY, and never
+        appear in the source CSV or the metadata file.
 
     Returns:
         list: Ordered table column names, excluding meta_ audit columns.
@@ -356,13 +356,15 @@ def copy_to_redshift(event, context):
           list so audit-only columns (e.g. meta_loaded_at) can carry
           their own DEFAULT (e.g. GETDATE()) without needing to be
           present in the source CSV
+        - stamp the loaded rows with meta_from_source, recording the
+          full S3 path the data was loaded from
 
     Returns:
         dict: Lambda response with load status.
     """
     try:
         logger.info("Lambda triggered")
-        logger.info("Lambda version: meta_ audit column support")
+        logger.info("Lambda version: meta_from_source support")
 
         bucket = os.environ["BUCKET"]
         workgroup = os.environ["WORKGROUP"]
@@ -455,6 +457,27 @@ def copy_to_redshift(event, context):
         )
 
         logger.info("Copied file into %s.%s", schema, table)
+
+        s3_source_path = f"s3://{bucket}/{s3_key}"
+
+        update_sql = f"""
+        UPDATE {schema}.{table}
+        SET meta_from_source = '{s3_source_path}'
+        WHERE meta_from_source IS NULL;
+        """
+
+        execute_sql(
+            workgroup,
+            database,
+            update_sql
+        )
+
+        logger.info(
+            "Set meta_from_source to %s for %s.%s",
+            s3_source_path,
+            schema,
+            table
+        )
 
         return {
             "statusCode": 200,
