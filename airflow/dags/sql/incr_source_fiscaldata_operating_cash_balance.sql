@@ -1,0 +1,1 @@
+CALL source_fiscaldata.sp_operating_cash_balance('skip_datahash');
