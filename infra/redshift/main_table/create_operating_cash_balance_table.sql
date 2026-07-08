@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS fiscaldata.operating_cash_balance (
     record_calendar_quarter  SMALLINT,
     record_calendar_month    SMALLINT,
     record_calendar_day      SMALLINT,
+    operating_cash_balance_key  VARCHAR(32),
+    meta_datahash               VARCHAR(32),
+    meta_etl_operation          VARCHAR(10),
+    meta_updated_by              VARCHAR(200),
+    meta_updated_date            TIMESTAMP,
+    meta_from_source              VARCHAR(500),
     PRIMARY KEY (record_date, account_type, src_line_nbr)
 )
 DISTSTYLE KEY
