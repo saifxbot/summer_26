@@ -1,0 +1,1 @@
+CALL source_fiscaldata.sp_treasury_reporting_rates_exchange('skip_datahash');
