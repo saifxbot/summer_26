@@ -1,0 +1,1 @@
+CALL source_fiscaldata.sp_deposits_withdrawals_operating_cash('skip_datahash');
