@@ -8,3 +8,5 @@ __pycache__/
 settings_api_aws.ini
 aws_zone.ini
 exchange_rates.csv.gz
+config.bat
+node_modules
