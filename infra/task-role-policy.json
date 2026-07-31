@@ -2,12 +2,23 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "WriteRawDataToPipelineBucket",
+      "Sid": "ReadWriteRawDataToPipelineBucket",
       "Effect": "Allow",
       "Action": [
+        "s3:GetObject",
         "s3:PutObject"
       ],
       "Resource": "arn:aws:s3:::summer-26-project/*"
+    },
+    {
+      "Sid": "ReadWritePipelineStateTable",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem"
+      ],
+      "Resource": "arn:aws:dynamodb:eu-west-1:811783767965:table/summer-26-pipeline-state"
     }
   ]
 }

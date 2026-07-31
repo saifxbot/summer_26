@@ -1,12 +1,14 @@
+import argparse
 import configparser
 import logging
 import os
-import tempfile
+import re
 import time
 
-import boto3
 import pandas as pd
 import requests
+
+from dynamodb_state import get_watermark, merge_upload, set_watermark
 
 
 logging.basicConfig(
@@ -110,7 +112,7 @@ def map_operating_cash_balance(row):
     }
 
 
-def fetch_operating_cash_balance():
+def fetch_operating_cash_balance(watermark=None, full=False):
     config = load_config()
 
     base_url = config.get("fiscaldata", "base_url")
@@ -118,6 +120,16 @@ def fetch_operating_cash_balance():
     page_size = config.getint("operating_cash_balance", "page_size")
 
     url = f"{base_url}{endpoint}"
+
+    if watermark is not None and not full:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", watermark):
+            raise ValueError(
+                f"Invalid watermark format for operating_cash_balance: {watermark!r}"
+            )
+
+        date_filter = f"record_date:gte:{watermark}"
+    else:
+        date_filter = None
 
     page_number = 1
     rows = []
@@ -129,6 +141,9 @@ def fetch_operating_cash_balance():
             "sort": "record_date",
             "format": "json"
         }
+
+        if date_filter is not None:
+            params["filter"] = date_filter
 
         _LOGGER.info("Fetching page %s", page_number)
 
@@ -174,46 +189,48 @@ def fetch_operating_cash_balance():
     return df
 
 
-def upload_to_s3(df):
+def main():
+    parser = argparse.ArgumentParser(
+        description="Fetch Treasury operating cash balance data"
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Force a full reload of all history (ignores watermark)"
+    )
+    args = parser.parse_args()
+
     config = load_config()
+    dataset = "operating_cash_balance"
 
     bucket = config.get("storage", "bucket_name")
     s3_key = config.get("storage", "operating_cash_balance_key")
     region = config.get("aws", "region")
 
-    local_file = os.path.join(
-        tempfile.gettempdir(),
-        "operating_cash_balance.csv.gz"
+    watermark = None if args.full else get_watermark(dataset)
+
+    df = fetch_operating_cash_balance(
+        watermark=watermark,
+        full=args.full
     )
-
-    df.to_csv(
-        local_file,
-        index=False,
-        compression="gzip"
-    )
-
-    s3 = boto3.client(
-        "s3",
-        region_name=region
-    )
-
-    s3.upload_file(
-        local_file,
-        bucket,
-        s3_key
-    )
-
-    _LOGGER.info("Created CSV gzip file: %s", local_file)
-    _LOGGER.info("Uploaded successfully to s3://%s/%s", bucket, s3_key)
-
-
-def main():
-    df = fetch_operating_cash_balance()
 
     if df.empty:
-        raise Exception("No operating cash balance data fetched")
+        if args.full:
+            raise Exception("No operating cash balance data fetched")
 
-    upload_to_s3(df)
+        _LOGGER.info("No new operating cash balance data; nothing to do")
+        return
+
+    uploaded, merged = merge_upload(
+        bucket,
+        s3_key,
+        df,
+        dataset,
+        region
+    )
+
+    if uploaded:
+        set_watermark(dataset, str(merged["record_date"].max()), len(merged))
 
 
 if __name__ == "__main__":
