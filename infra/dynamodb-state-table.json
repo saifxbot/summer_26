@@ -1,0 +1,17 @@
+{
+  "TableName": "summer-26-pipeline-state",
+  "AttributeDefinitions": [
+    {
+      "AttributeName": "dataset",
+      "AttributeType": "S"
+    }
+  ],
+  "KeySchema": [
+    {
+      "AttributeName": "dataset",
+      "KeyType": "HASH"
+    }
+  ],
+  "BillingMode": "PAY_PER_REQUEST",
+  "Region": "eu-west-1"
+}
