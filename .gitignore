@@ -24,7 +24,7 @@ airflow/logs/
 
 # Data and large artifacts
 exchange_rates.csv.gz
-images/
+
 
 # IDEs and editor folders
 .vscode/
