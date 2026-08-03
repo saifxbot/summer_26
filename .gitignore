@@ -1,10 +1,50 @@
+# Local settings and secrets
 settings.ini
-.venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.log
 settings_api_aws.ini
 aws_zone.ini
+.env
+
+# Virtual environments
+.venv/
+venv/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Logs and databases
+*.log
+logs/
+*.sqlite3
+
+# Airflow
+airflow/logs/
+
+# Data and large artifacts
 exchange_rates.csv.gz
+images/
+
+# IDEs and editor folders
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing and tooling
+.pytest_cache/
+.mypy_cache/
+.coverage
+
+# OS files
+.DS_Store
+
+# Build/dist
+build/
+dist/
+*.egg-info/
+
+# Pip cache
+.cache/
