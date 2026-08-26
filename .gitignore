@@ -2,7 +2,6 @@
 settings.ini
 settings_api_aws.ini
 aws_zone.ini
-.env
 
 # Virtual environments
 .venv/
@@ -27,7 +26,6 @@ exchange_rates.csv.gz
 
 
 # IDEs and editor folders
-.vscode/
 .idea/
 
 # Jupyter
@@ -48,3 +46,5 @@ dist/
 
 # Pip cache
 .cache/
+config.bat
+node_modules
